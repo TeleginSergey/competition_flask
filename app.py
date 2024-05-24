@@ -4,7 +4,6 @@ from psycopg2.extras import RealDictCursor
 from flask import request
 from psycopg2.sql import SQL, Literal
 from dotenv import load_dotenv
-from datetime import datetime, timezone
 import os
 
 load_dotenv()
@@ -275,34 +274,38 @@ def delete_sport():
 @app.get("/stages")
 def get_stages():
     query = """
-    with comp_sport_ids as (
+        with comp_sport_ids as (
         select
-            competition_id,
-            sport_id
-        from competition_sport cs
-        join stages s on s.competition_sport_id = cs.id
+            cs.id,
+            cs.competition_id,
+            cs.sport_id
+        from competition_schema.competition_sport cs
+        join competition_schema.stages s on s.competition_sport_id = cs.id
     ),
-    competition_title as (
+    competition_titles as (
         select
-            title as comp_title
-        from competitions c
-        where c.id = comp_sport_ids.competition_id
+            cpi.id as comp_sport_id,
+            c.title as comp_title
+        from competition_schema.competitions c
+        join comp_sport_ids cpi on c.id = cpi.competition_id
     ),
-    sport_title as (
+    sport_titles as (
         select
-            title as sport_title
-        from sports s
-        where s.id = comp_sport_ids.sport_id
+            cpi.id as comp_sport_id,
+            s.title as sport_title
+        from competition_schema.sports s
+        join comp_sport_ids cpi on s.id = cpi.sport_id
     )
-	select
-	    id,
-	    title,
-	    date,
-        place,
-        sport_title,
-        competition_title
-	from competition_schema.stages
-	group by id
+    select
+        s.id,
+        s.title,
+        s.date,
+        s.place,
+        st.sport_title,
+        ct.comp_title
+    from competition_schema.stages s
+    left join competition_titles ct on s.competition_sport_id = ct.comp_sport_id
+    left join sport_titles st on s.competition_sport_id = st.comp_sport_id;
     """
 
     with connection.cursor() as cursor:
@@ -326,16 +329,14 @@ def create_stage():
     competition_sport_id = body.get('competition_sport_id')
 
     query = SQL("""
-    insert into competition_schema.sports(title, date, place, competition_sport_id, created, modified)
-    values ({title}, {date}, {place}, {competition_sport_id}, {created}, {modified})
+    insert into competition_schema.stages(title, date, place, competition_sport_id)
+    values ({title}, {date}, {place}, {competition_sport_id})
     returning id
     """).format(
         title=Literal(title),
         date=Literal(date),
         place=Literal(place),
         competition_sport_id=Literal(competition_sport_id),
-        created=datetime.now(timezone.utc),
-        modified=datetime.now(timezone.utc),
     )
 
     with connection.cursor() as cursor:
@@ -360,7 +361,7 @@ def update_stage():
     competition_sport_id = body.get('competition_sport_id')
 
     query = SQL("""
-    update competition_schema.sports
+    update competition_schema.stages
     set 
         title = {title}, 
         date = {date},
