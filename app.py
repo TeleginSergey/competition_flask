@@ -493,5 +493,39 @@ def delete_stage():
 
     return '', 204
 
+
+@app.get('/stages/find_by_title')
+def get_stage_by_title():
+    title = request.args.get('title')
+
+    query = SQL("""
+    select id, title, date, place
+    from competition_schema.stages
+    where title ilike {title}
+    """).format(title=Literal('%' + title + '%'))
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+    return result
+
+
+@app.get('/stages/find_by_date')
+def get_stage_by_year():
+    date = request.args.get('date')
+
+    query = SQL("""
+    select id, title, date, place
+    from competition_schema.stages
+    where date = {date}
+    """).format(date=Literal(date))
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+    return result
+
 if __name__ == '__main__':
     app.run(port=os.getenv('FLASK_PORT'))
