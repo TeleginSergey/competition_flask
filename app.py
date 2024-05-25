@@ -129,7 +129,7 @@ def update_competition():
     date_of_start = body.get('date_of_start')
     date_of_end = body.get('date_of_end')
 
-    if date_of_end > date_of_start:
+    if date_of_start and date_of_end and date_of_end > date_of_start:
         return "Start date of competition can't be later than end date", 400
 
     query = SQL("""
@@ -170,7 +170,7 @@ def delete_competition():
         "delete from competition_schema.competition_sport where competition_id = {id}").format(
             id=Literal(id),
     )
-    deleteCompetition = SQL("delete from competition_sport.competitions where id = {id} returning id").format(
+    deleteCompetition = SQL("delete from competition_schema.competitions where id = {id} returning id").format(
         id=Literal(id),
     )
 
@@ -319,7 +319,7 @@ def delete_sport():
         "delete from competition_schema.competition_sport where sport_id = {id}").format(
             id=Literal(id),
     )
-    deleteSport = SQL("delete from competition_sport.sports where id = {id} returning id").format(
+    deleteSport = SQL("delete from competition_schema.sports where id = {id} returning id").format(
         id=Literal(id),
     )
 
@@ -480,7 +480,7 @@ def delete_stage():
     if not id:
         return 'Field id is required', 400
 
-    deleteStage = SQL("delete from competition_sport.stages where id = {id} returning id").format(
+    deleteStage = SQL("delete from competition_schema.stages where id = {id} returning id").format(
         id=Literal(id)
     )
 
