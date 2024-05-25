@@ -31,19 +31,51 @@ def hello_world():
 @app.get("/competitions")
 def get_competitions():
     query = """
-	select
-	  c.id,
-	  c.title,
-	  c.date_of_start,
-	  c.date_of_end,
-	  coalesce(jsonb_agg(jsonb_build_object(
-	    'id', s.id, 'title', s.title, 'description', s.description))
-	      filter (where s.id is not null), '[]') as sports
-	from competition_schema.competitions c
-	left join competition_schema.competition_sport cs on c.id = cs.competition_id
-	left join competition_schema.sports s on s.id = cs.sport_id
-	group by c.id
-"""
+	WITH competitions_with_sports AS (
+  SELECT
+    c.id AS competition_id,
+    c.title AS competition_title,
+    c.date_of_start AS competition_start_date,
+    c.date_of_end AS competition_end_date,
+    cs.id AS competition_sport_id,
+    s.id as sport_id,
+    s.title AS sport_title,
+    s.description AS sport_description
+  FROM competition_schema.competitions c
+  LEFT JOIN competition_schema.competition_sport cs ON c.id = cs.competition_id
+  LEFT JOIN competition_schema.sports s ON cs.sport_id = s.id
+),
+competitions_with_stages AS (
+  SELECT 
+    cws.competition_id,
+    cws.competition_title,
+    cws.competition_start_date,
+    cws.competition_end_date,
+    cws.sport_id,
+    cws.sport_title,
+    cws.sport_description,
+    coalesce(json_agg(json_build_object(
+        'stage_title', st.title,
+        'stage_date', st.date,
+        'stage_place', st.place
+    )) filter (where st.title is not null), '[]') AS stage_info
+  FROM competitions_with_sports cws
+  LEFT JOIN competition_schema.stages st ON cws.competition_sport_id = st.competition_sport_id
+  GROUP BY competition_id, competition_title, competition_start_date, competition_end_date, sport_id, sport_title, sport_description
+)
+SELECT 
+    competition_id, 
+    competition_title, 
+    competition_start_date, 
+    competition_end_date,
+    coalesce(json_agg(json_build_object(
+        'sport_title', sport_title,
+        'sport_description', sport_description, 
+        'stages', stage_info
+    )) filter (where sport_title is not null), '[]') AS sports
+FROM competitions_with_stages
+GROUP BY competition_id, competition_title, competition_start_date, competition_end_date;
+    """
 
     with connection.cursor() as cursor:
         cursor.execute(query)
@@ -159,17 +191,50 @@ def delete_competition():
 @app.get("/sports")
 def get_sports():
     query = """
-	select
-	  s.id,
-	  s.title,
-	  s.description,
-	  coalesce(jsonb_agg(jsonb_build_object(
-	    'id', c.id, 'title', c.title, 'date_of_start', c.date_of_start, 'date_of_end', c.date_of_end))
-	      filter (where s.id is not null), '[]') as competitions
-	from competition_schema.sports s
-	left join competition_schema.competition_sport cs on s.id = cs.sport_id
-	left join competition_schema.competitions c on c.id = cs.competition_id
-	group by s.id
+	WITH competitions_with_sports AS (
+  SELECT
+    c.id AS competition_id,
+    c.title AS competition_title,
+    c.date_of_start AS competition_start_date,
+    c.date_of_end AS competition_end_date,
+    cs.id AS competition_sport_id,
+    s.id as sport_id,
+    s.title AS sport_title,
+    s.description AS sport_description
+  FROM competition_schema.sports s
+  LEFT JOIN competition_schema.competition_sport cs ON s.id = cs.sport_id
+  LEFT JOIN competition_schema.competitions c ON cs.competition_id = c.id
+),
+sports_with_stages AS (
+  SELECT 
+    cws.competition_id,
+    cws.competition_title,
+    cws.competition_start_date,
+    cws.competition_end_date,
+    cws.sport_id,
+    cws.sport_title,
+    cws.sport_description,
+    coalesce(json_agg(json_build_object(
+        'stage_title', st.title,
+        'stage_date', st.date,
+        'stage_place', st.place
+    )) filter (where st.title is not null), '[]') AS stage_info
+  FROM competitions_with_sports cws
+  LEFT JOIN competition_schema.stages st ON cws.competition_sport_id = st.competition_sport_id
+  GROUP BY sport_id, sport_title, sport_description, competition_id, competition_title, competition_start_date, competition_end_date
+)
+SELECT 
+    sport_id, 
+    sport_title, 
+    sport_description, 
+    coalesce(json_agg(json_build_object(
+        'competition_title', competition_title,
+        'competition_start_date', competition_start_date,
+        'competition_end_date', competition_end_date,
+        'stages', stage_info
+    )) filter (where competition_title is not null), '[]') AS competitions
+FROM sports_with_stages
+GROUP BY sport_id, sport_title, sport_description;
     """
 
     with connection.cursor() as cursor:
@@ -314,6 +379,25 @@ def get_stages():
 
     return result
 
+@app.get("/competition_sport")
+def get_competition_sport():
+    query = SQL(
+    """
+    select
+        cs.id,
+        c.title as competition_title,
+        s.title as sport_title
+    from competition_schema.competition_sport cs
+    join competition_schema.competitions c on c.id = cs.competition_id
+    join competition_schema.sports s on s.id = cs.sport_id;
+    """
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+    return result
+
 
 @app.post('/stages/create')
 def create_stage():
@@ -328,7 +412,7 @@ def create_stage():
     place = body.get('place')
     competition_sport_id = body.get('competition_sport_id')
 
-    query = SQL("""
+    query_for_create = SQL("""
     insert into competition_schema.stages(title, date, place, competition_sport_id)
     values ({title}, {date}, {place}, {competition_sport_id})
     returning id
@@ -340,7 +424,7 @@ def create_stage():
     )
 
     with connection.cursor() as cursor:
-        cursor.execute(query)
+        cursor.execute(query_for_create)
         result = cursor.fetchone()
 
     return result
@@ -359,6 +443,7 @@ def update_stage():
     date = body.get('date')
     place = body.get('place')
     competition_sport_id = body.get('competition_sport_id')
+
 
     query = SQL("""
     update competition_schema.stages

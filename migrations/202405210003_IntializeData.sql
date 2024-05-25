@@ -51,7 +51,7 @@ INSERT INTO competition_schema.competition_sport (competition_id, sport_id)
 SELECT c.id, s.id
 FROM competition_schema.competitions c
 CROSS JOIN competition_schema.sports s
-WHERE c.title = 'Competition 1' AND s.title = 'Sport 1';
+WHERE c.title = 'Summer Games 2024' AND s.title = 'Sport 1';
 
 INSERT INTO competition_schema.competition_sport (competition_id, sport_id)
 SELECT c.id, s.id
